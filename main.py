@@ -5,46 +5,45 @@ import requests
 import time
 import requests
 from bs4 import BeautifulSoup
-from pandas import DataFrame
+from pandas import DataFrame, concat
 from transformers import pipeline
 
-url = "https://www.cnbc.com/search/?query=green%20hydrogen&qsearchterm=green%20hydrogen"
+cnbc_url = "https://www.cnbc.com/search/?query=green%20hydrogen&qsearchterm=green%20hydrogen"
+rss_url = "https://news.google.com/rss/search?q=green+hydrogen"
 
-def Cnbc():
+def Cnbc(url : str) -> list:
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
     driver = webdriver.Chrome()
     driver.get(url)
     time.sleep(20)
     result = driver.find_elements_by_class_name("Card-title")
-    print(len(result))
-    result_list = [i.text for i in result]
-    return result_list
-    # driver.quit()
+    return [i.text for i in result]
 
-def Google_rss():
+def Google_rss(url : str) -> list:
     request = requests.get(url)
-    soup = BeautifulSoup(request, 'xml')
-    result = soup.findAll('item')
-    print(result.text)
+    soup = BeautifulSoup(request.text, features='xml')
+    return [i.text for i in soup.find_all('title')]
 
-# Google_rss()
+def create_df(source : str, result_list : list) -> list:    
+    df = DataFrame({
+        "Source":source,
+        "Headline":result_list,
+        })
+    return df
 
-result_list = Cnbc()
 
+df_list = [create_df("CNBC", Cnbc(cnbc_url)), create_df("Google RSS", Google_rss(rss_url))]
+result_df = concat(df_list, axis=0)
+# print(result_df)
 
 sentiment_pipeline = pipeline("sentiment-analysis")
 
-x = sentiment_pipeline(result_list)
-y = [i['label'] for i in x]
-df = DataFrame({
-    "Source":"CNBC",
-    "Headline":result_list,
-    })
+def sentiment_analysis(row) -> str:
+    sentiment = sentiment_pipeline(row['Headline'])[0]
+    return f"{sentiment['label']} ({sentiment['score']})"
 
-def sentiment(x):
-    return sentiment_pipeline(x['Headline'])
-df["sentiment"] = df.apply(sentiment, axis=1)
-print(df)
+result_df["sentiment"] = result_df.apply(sentiment_analysis, axis=1)
 
-df.to_csv("test.csv")
+# writing data to csv file
+result_df.to_csv("test.csv")
